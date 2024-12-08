@@ -152,6 +152,25 @@ def get_topic_work_table():
     finally:
         conn.close()
 
+def get_work_tag(work_id):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        query = "SELECT tag FROM m_work WHERE work_id = %s"
+        cursor.execute(query, (work_id,))
+        result = cursor.fetchone()
+        return result['tag'] if result else None
+
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return None
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 
 
 
@@ -188,7 +207,7 @@ def insert_university():
                 # Encode the image in base64
                 with open(output_file, "rb") as image_file:
                     encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-
+            
                 conn.commit()
                 return jsonify({
                     "university_info": university_info,
@@ -259,22 +278,6 @@ def insert_people():
         conn.close()
 
 
-
-
-
-
-
-
-
-
-
-# @app.route('/draw_graph', methods=['GET'])
-# def draw_graph():
-#     output_file = 'relationship_graph.png'
-#     utils.draw_relationship_graph(people_info_set, university_info_set, topic_info_set, output_file)
-#     return send_file(output_file, mimetype='image/png')
-
-
 @app.route("/api/insertTopic", methods=["POST"])
 def insert_topic():
     data = request.json
@@ -305,7 +308,7 @@ def insert_topic():
                     encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
 
                 conn.commit()
-                print(topic_info)
+                # print(topic_info)
                 return jsonify({
                     "topic_info": topic_info,
                     "image": encoded_string
@@ -342,16 +345,27 @@ def insert_work():
             work_info = cursor.fetchone()
             print("WorkInfo:", work_info)
             if work_info:
+                # Call the stored procedure to get the tag value
+                tag_value = get_work_tag(work_info['work_id'])
+                print("Tag Value:", tag_value)
+                if tag_value == 1:
+                    print("i should modify the work info")
+                    work_info['title'] += '*'
+                # node_color = 'orange' if tag_value == 1 else 'default_color'
+                # print(f"Node Color: {node_color}")
+                print(f"Modified WorkInfo: {work_info}")
+
+
                 work_info_set.add(frozenset(work_info.items()))
                 output_file = 'relationship_graph.png'
-                print("start drawing")
+                # print("start drawing")
                 utils.draw_relationship_graph(topic_work_dict, work_author_dict, work_info_set, people_info_set, university_info_set, topic_info_set, output_file)
-                print("end drawing")
+                # print("end drawing")
                 with open(output_file, "rb") as image_file:
                     encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
 
                 conn.commit()
-                print("work_info:", work_info)
+                # print("work_info:", work_info)
                 return jsonify({
                     "work_info": work_info,
                     "image": encoded_string
@@ -533,30 +547,43 @@ def get_music():
     conn = get_db_connection()
     cursor = conn.cursor()
     query = """
-            SELECT genre
-            FROM genre_category
-            WHERE category =(
-                            SELECT category
-                            FROM topic
-                            WHERE topic_id =( 
-                                            SELECT topic_id
-                                            FROM topic_work
-                                            WHERE work_id = (
-                                                            SELECT work_id
-                                                            FROM work
-                                                            WHERE title = %s
-                                                            )
-                                            Limit 1
-                                            )
-                            )
+            SELECT filename 
+            FROM music
+            WHERE genre = (
+                        SELECT genre
+                        FROM genre_category
+                        WHERE category =(
+                                        SELECT category
+                                        FROM topic
+                                        WHERE topic_id =( 
+                                                        SELECT topic_id
+                                                        FROM topic_work
+                                                        WHERE work_id = (
+                                                                        SELECT work_id
+                                                                        FROM work
+                                                                        WHERE title = %s
+                                                                        )
+                                                        Limit 1
+                                                        )
+                                        )
+                        )
+            ORDER BY RAND()
+            Limit 1;
             """
     cursor.execute(query, (title,))
-    genre= cursor.fetchall()
+    result = cursor.fetchone()  # Fetch the single row
 
     if conn.is_connected():
         cursor.close()
         conn.close()
-    return jsonify([{"genre": row[0]} for row in genre])
+
+    if not result:
+        return jsonify({"error": "No file found for the given title"}), 404
+
+    filename = result[0]  # Extract the first element of the tuple
+    file_url = f"/static/audio/{filename}"  # Construct the file URL
+    return jsonify({"file_url": file_url})
+
 
 @app.route("/api/music/delete", methods=["DELETE"])
 def delete_music():
@@ -569,7 +596,7 @@ def delete_music():
         cursor = conn.cursor()
 
         # SQL Delete Command
-        query = "DELETE FROM m_music WHERE MusicId = %s"
+        query = "DELETE FROM music WHERE MusicId = %s"
         cursor.execute(query, (music_id,))
 
         # Commit the changes
@@ -583,6 +610,83 @@ def delete_music():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/statistics', methods=['POST'])
+def get_statistics():
+    category = request.json.get('category')  # Expecting JSON input
+    if not category:
+        return jsonify({"error": "Category parameter is required"}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Query 1: Publications by Year
+        query_by_year = """
+        SELECT work.publication_year,
+               COUNT(work.work_id)
+        FROM   work
+               JOIN topic_work
+                 ON topic_work.work_id = work.work_id
+               JOIN topic
+                 ON topic_work.topic_id = topic.topic_id
+        WHERE  topic.category = %s
+        GROUP  BY work.publication_year
+        ORDER  BY work.publication_year ASC;
+        """
+        cursor.execute(query_by_year, (category,))
+        publications_by_year = [{"year": row[0], "count": row[1]} for row in cursor.fetchall()]
+
+        # Query 2: Publications by University
+        query_by_university = """
+        SELECT   COUNT(work.work_id),
+                 author.university_name
+        FROM     work
+        JOIN     author
+        JOIN     work_author
+        JOIN     topic
+        JOIN     topic_work
+        ON       work_author.work_id = work.work_id
+        AND      work_author.author_id = author.author_id
+        AND      topic_work.topic_id = topic.topic_id
+        AND      topic_work.work_id = work.work_id
+        WHERE topic.category = %s
+        AND author.university_name != 'Unknown'
+        GROUP BY author.university_name
+        ORDER BY COUNT(work.work_id) DESC
+        LIMIT 100;
+        """
+        cursor.execute(query_by_university, (category,))
+        publications_by_university = [{"university": row[1], "count": row[0]} for row in cursor.fetchall()]
+
+        # Update Query
+        update_query = """
+        UPDATE work
+        SET pop = pop + 1
+        WHERE work_id IN (
+        SELECT work_id 
+        FROM topic_work 
+        WHERE topic_id IN (
+        SELECT topic_id 
+        FROM topic 
+        WHERE category = %s
+        ));
+        """
+        cursor.execute(update_query, (category,))
+        conn.commit()
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
+    return jsonify({
+        "publications_by_year": publications_by_year,
+        "publications_by_university": publications_by_university,
+        "update_message": "Database updated successfully."
+    })
 
 @app.route("/")
 def home():
