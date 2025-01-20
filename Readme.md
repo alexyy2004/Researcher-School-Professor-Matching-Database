@@ -1,16 +1,3 @@
-# TeamID-SampleProject
-This is a template for CS411 project repository. Please make sure that your title follows the convention: [TeamID]-[YourTeamName]. All TeamID should have a three digit coding (i.e. if you are team 20, you should have `team020` as your ID.). You should also make sure that your url for this repository is [fa24-cs411-team000-teamname.git] so TAs can correctly clone your repository and keep them up-to-date.
+# Researcher-School-Professor-Matching-Database
 
-Once you setup your project, please remember to submit your team formation to the team form.
-
-## Permission
-You should make sure you allow TAs to access your repository. You can add TA(s) as a collaborator to your repository.
-
-## Preparing for your release
-Eash submission should be in it's own [release](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases). Release are specific freezes to your repository. You should submit your commit hash on canvas or google sheet. When tagging your stage, please use the tag `stage.x` where x is the number to represent the stage.
-
-## Keeping things up-to-date
-You should make sure you keep your project root files up-to-date. Information for each file/folders are explained.
-
-## Code Contribution
-Individual code contribution will be used to evaluate individual contribution to the project.
+Our project aims to aggregate the findings of several databases related to criminal activity and present it in a way that makes relationships between different entities or events clear. This application can take the place of pin boards you may see detectives use in investigation to map different objects to each other. An object can be a person, IP address, gang, etc. An object can be imported into a board with either a manual entry, or a lookup of a person, event, IP address, etc in one or more publicly accessible databases (facilitated by our application). While importing an object into the board, we will have an algorithm that suggests adding relationships between the new object and objects on the board. The user also has the opportunity to enter relationships between objects on the board. The visual representation will look much like a pinboard used by detectives. Objects will be represented by nodes and relationships by edges. Overlap between seperate boards (investigations) can also be viewed.
